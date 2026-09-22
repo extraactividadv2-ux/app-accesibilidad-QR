@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Escáner de accesibilidad</title>
+<style>
+  body { font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background:#f5f5f3; }
+  h1 { font-size: 18px; }
+  button { padding: 12px 16px; font-size: 14px; border-radius: 8px; border: 1px solid #ccc; margin: 6px 0; width: 100%; cursor: pointer; }
+  #btnCargar, #btnSiguiente, #btnIniciarCamara { background:#0c447c; color:white; border:none; }
+  #btnEntregada { background:#1a7a3c; color:white; border:none; }
+  #btnNoEntregada { background:#a15c00; color:white; border:none; }
+  #btnBorrar { background:#791f1f; color:white; border:none; }
+  #btnExportar { background:#444; color:white; border:none; }
+  #estado { font-size: 13px; color: #555; margin: 8px 0; }
+  #resultado { margin-top: 16px; padding: 16px; border-radius: 8px; background: white; border: 1px solid #ddd; display:none; }
+  #resultado .manilla { font-weight:bold; font-size: 16px; }
+  #aviso-duplicado { background:#fff3cd; border:1px solid #e0a800; padding:12px; border-radius:8px; margin-top:12px; display:none; }
+  #reader { width: 100%; margin-top: 12px; }
+  #controles-finales { margin-top: 20px; border-top: 1px solid #ddd; padding-top: 12px; }
+  input[type=file] { width: 100%; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Escáner de accesibilidad</h1>
+<div id="estado">Sin datos del evento cargados.</div>
+
+<!-- PANTALLA 1: cargar los datos del evento (una sola vez, con internet) -->
+<div id="paso-carga">
+  <p>Antes de las puertas (con internet), carga el archivo event_lookup.json:</p>
+  <input type="file" id="archivoJson">
+  <button id="btnCargar">Cargar datos del evento</button>
+</div>
+
+<!-- PANTALLA 2: escaneo, ya sin necesitar internet -->
+<div id="paso-escaneo" style="display:none;">
+  <button id="btnIniciarCamara">📷 Iniciar cámara para escanear</button>
+  <div id="reader"></div>
+
+  <div id="aviso-duplicado"></div>
+
+  <div id="resultado">
+    <div class="manilla" id="res-manilla"></div>
+    <p><b>Nombre:</b> <span id="res-nombre"></span></p>
+    <p><b>Tipo de documento:</b> <span id="res-tipodoc"></span></p>
+    <p><b>Número de documento:</b> <span id="res-numdoc"></span></p>
+    <p><b>Especificaciones del equipo:</b> <span id="res-especificaciones"></span></p>
+
+    <button id="btnEntregada">✅ Manilla entregada</button>
+    <button id="btnNoEntregada">❌ No entregada</button>
+  </div>
+
+  <button id="btnSiguiente" style="display:none;">Escanear siguiente</button>
+
+  <div id="controles-finales">
+    <button id="btnExportar">Exportar registro de ingresos</button>
+    <button id="btnBorrar">Borrar datos del evento</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script>
+
+  // Guardamos una copia offline de la app la primera vez que se abre.
+  // Esto envuelto en try/catch para que, si falla (por ejemplo porque
+  // sw.js no existe en este lugar específico donde está publicada la
+  // página), el resto de la app siga funcionando con total normalidad.
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  } catch (error) {
+    // Si falla, no pasa nada — seguimos sin la copia offline extra.
+  }
+
+  // ---------- CONFIGURACIÓN ----------
+  const HORAS_EXPIRACION = 48; // borrado automático pasadas 48h de cargar los datos
+  let scanner = null;
+  let codigoActual = null; // guarda qué código se acaba de escanear, mientras se decide
+
+  // ---------- PASO 0: revisar si ya hay datos cargados al abrir la app ----------
+  function actualizarEstado() {
+    const guardadoEn = localStorage.getItem("evento_cargado_en");
+    const datos = localStorage.getItem("evento_lookup");
+
+    if (!datos || !guardadoEn) {
+      document.getElementById("estado").textContent = "Sin datos del evento cargados.";
+      document.getElementById("paso-escaneo").style.display = "none";
+      document.getElementById("paso-carga").style.display = "block";
+      return false;
+    }
+
+    const horasTranscurridas = (Date.now() - Number(guardadoEn)) / (1000 * 60 * 60);
+    if (horasTranscurridas > HORAS_EXPIRACION) {
+      borrarTodo(false);
+      return false;
+    }
+
+    const totalPersonas = Object.keys(JSON.parse(datos)).length;
+    document.getElementById("estado").textContent =
+      `Datos cargados (${totalPersonas} personas). Listo para escanear sin internet.`;
+    document.getElementById("paso-carga").style.display = "none";
+    document.getElementById("paso-escaneo").style.display = "block";
+    return true;
+  }
+
+  // ---------- PASO 1: cargar el archivo event_lookup.json ----------
+  document.getElementById("btnCargar").addEventListener("click", () => {
+    const input = document.getElementById("archivoJson");
+    if (!input.files.length) {
+      alert("Selecciona primero el archivo event_lookup.json");
+      return;
+    }
+    const lector = new FileReader();
+    lector.onload = (e) => {
+      localStorage.setItem("evento_lookup", e.target.result);
+      localStorage.setItem("evento_cargado_en", Date.now().toString());
+      actualizarEstado();
+      // Ya NO iniciamos la cámara automáticamente aquí. El celular necesita
+      // que la pidas con un toque directo (el botón de abajo), o si no,
+      // no muestra ningún aviso de permiso.
+    };
+    lector.readAsText(input.files[0]);
+  });
+
+  // ---------- Botón explícito para iniciar la cámara ----------
+  document.getElementById("btnIniciarCamara").addEventListener("click", () => {
+    if (typeof Html5Qrcode === "undefined") {
+      document.getElementById("reader").innerHTML =
+        "<p style='color:#a11; font-weight:bold;'>No se pudo cargar la librería de la cámara.</p>" +
+        "<p style='font-size:13px;'>Esto pasa si en este momento no hay internet, o algo está " +
+        "bloqueando cdnjs.cloudflare.com. Revisa tu conexión y vuelve a intentar.</p>";
+      return;
+    }
+    try {
+      iniciarEscaner();
+      document.getElementById("btnIniciarCamara").style.display = "none";
+    } catch (error) {
+      document.getElementById("reader").innerHTML =
+        "<p style='color:#a11; font-weight:bold;'>Error al iniciar la cámara.</p>" +
+        "<p style='font-size:13px;'>Detalle técnico: " + error + "</p>";
+    }
+  });
+
+  // ---------- PASO 2: iniciar la cámara y detectar QR ----------
+  function iniciarEscaner() {
+    scanner = new Html5Qrcode("reader");
+    scanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 220 },
+      (codigoDetectado) => manejarEscaneo(codigoDetectado)
+    ).catch((error) => {
+      document.getElementById("reader").innerHTML =
+        "<p style='color:#a11; font-weight:bold;'>No se pudo activar la cámara.</p>" +
+        "<p style='font-size:13px;'>Detalle técnico: " + error + "</p>" +
+        "<p style='font-size:13px;'>Revisa que le hayas dado permiso de cámara a esta página " +
+        "en la configuración del navegador, y que ningún otro programa esté usando la cámara.</p>";
+    });
+  }
+
+  // ---------- PASO 3: qué hacer cuando se detecta un código ----------
+  function manejarEscaneo(codigo) {
+    scanner.pause(); // pausamos para no leer el mismo QR 20 veces por segundo
+
+    const yaIngreso = buscarIngresoPrevio(codigo);
+    if (yaIngreso) {
+      // Ya había entrado antes: avisamos y no dejamos registrar de nuevo
+      document.getElementById("aviso-duplicado").style.display = "block";
+      document.getElementById("aviso-duplicado").textContent =
+        `⚠️ Este código ya ingresó el ${yaIngreso.hora} (manilla: ${yaIngreso.manilla_entregada ? "sí entregada" : "no entregada"}).`;
+      document.getElementById("resultado").style.display = "none";
+      document.getElementById("btnSiguiente").style.display = "block";
+      return;
+    }
+
+    const datos = JSON.parse(localStorage.getItem("evento_lookup"));
+    const persona = datos[codigo];
+
+    document.getElementById("aviso-duplicado").style.display = "none";
+
+    if (!persona) {
+      alert("Código no encontrado en los datos del evento. Verifica el QR.");
+      document.getElementById("btnSiguiente").style.display = "block";
+      return;
+    }
+
+    // Mostramos los datos de la persona en pantalla
+    codigoActual = codigo;
+    document.getElementById("res-manilla").textContent = "Manilla: " + persona["Color de manilla"];
+    document.getElementById("res-nombre").textContent = persona["Nombre"];
+    document.getElementById("res-tipodoc").textContent = persona["tipo de documento"];
+    document.getElementById("res-numdoc").textContent = persona["numero de documento"];
+    document.getElementById("res-especificaciones").textContent = persona["especificaciones del equipo"];
+    document.getElementById("resultado").style.display = "block";
+  }
+
+  // ---------- PASO 4: el staff confirma si entregó la manilla o no ----------
+  function confirmarIngreso(entregada) {
+    const datos = JSON.parse(localStorage.getItem("evento_lookup"));
+    const persona = datos[codigoActual];
+
+    const registro = JSON.parse(localStorage.getItem("ingresos_registrados") || "[]");
+    registro.push({
+      codigo: codigoActual,
+      nombre: persona["Nombre"],
+      hora: new Date().toLocaleString(),
+      manilla_entregada: entregada
+    });
+    localStorage.setItem("ingresos_registrados", JSON.stringify(registro));
+
+    document.getElementById("resultado").style.display = "none";
+    document.getElementById("btnSiguiente").style.display = "block";
+  }
+
+  document.getElementById("btnEntregada").addEventListener("click", () => confirmarIngreso(true));
+  document.getElementById("btnNoEntregada").addEventListener("click", () => confirmarIngreso(false));
+
+  // ---------- PASO 5: volver a escanear a la siguiente persona ----------
+  document.getElementById("btnSiguiente").addEventListener("click", () => {
+    document.getElementById("btnSiguiente").style.display = "none";
+    document.getElementById("aviso-duplicado").style.display = "none";
+    scanner.resume();
+  });
+
+  // ---------- Buscar si un código ya fue registrado antes ----------
+  function buscarIngresoPrevio(codigo) {
+    const registro = JSON.parse(localStorage.getItem("ingresos_registrados") || "[]");
+    return registro.find((r) => r.codigo === codigo) || null;
+  }
+
+  // ---------- Exportar el registro de ingresos a un archivo descargable ----------
+  document.getElementById("btnExportar").addEventListener("click", () => {
+    const registro = JSON.parse(localStorage.getItem("ingresos_registrados") || "[]");
+    if (registro.length === 0) {
+      alert("Todavía no hay ningún ingreso registrado.");
+      return;
+    }
+
+    // Armamos un texto tipo CSV: primero los encabezados, luego una línea por registro
+    let csv = "codigo,nombre,hora,manilla_entregada\n";
+    registro.forEach((r) => {
+      csv += `${r.codigo},"${r.nombre}",${r.hora},${r.manilla_entregada ? "si" : "no"}\n`;
+    });
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const enlace = document.createElement("a");
+    enlace.href = url;
+    enlace.download = "registro_ingresos.csv";
+    enlace.click();
+  });
+
+  // ---------- Borrar todos los datos guardados en este celular ----------
+  function borrarTodo(pedirConfirmacion = true) {
+    if (pedirConfirmacion && !confirm("¿Borrar todos los datos del evento y el registro de ingresos de este celular?")) {
+      return;
+    }
+    localStorage.removeItem("evento_lookup");
+    localStorage.removeItem("evento_cargado_en");
+    localStorage.removeItem("ingresos_registrados");
+    actualizarEstado();
+  }
+
+  document.getElementById("btnBorrar").addEventListener("click", () => borrarTodo(true));
+
+  // ---------- Al abrir la app, revisamos si ya había datos cargados ----------
+  // Ya no iniciamos la cámara sola aquí tampoco, por el mismo motivo: en
+  // el celular, tiene que ser un toque directo del botón, no algo automático.
+  actualizarEstado();
+
+</script>
+
+</body>
+</html>
