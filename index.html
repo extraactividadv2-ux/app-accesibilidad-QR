@@ -1,18 +1,19 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Escáner de accesibilidad</title>
+<meta charset="UTF-8"> <!-- interpretación de caracteres -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- ancho de la página se adapta automáticamente al ancho de la pantalla del dispositivo -->
+<title>Escáner de accesibilidad Páramo</title>
 <style>
   body { font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background:#f5f5f3; }
   h1 { font-size: 18px; }
   button { padding: 12px 16px; font-size: 14px; border-radius: 8px; border: 1px solid #ccc; margin: 6px 0; width: 100%; cursor: pointer; }
   #btnCargar, #btnSiguiente, #btnIniciarCamara, #btnGuardarNuevoUsuario { background:#0c447c; color:white; border:none; }
-  #btnNuevoUsuario, #btnCancelarNuevoUsuario { background:#5a4a9e; color:white; border:none; }
-  #form-nuevo-usuario { background:white; border:1px solid #ddd; border-radius:8px; padding:16px; margin-top:8px; }
-  #form-nuevo-usuario label { display:block; font-size:13px; color:#555; margin-top:8px; }
-  #form-nuevo-usuario input { width:100%; padding:8px; border-radius:6px; border:1px solid #ccc; box-sizing:border-box; }
+  #btnNuevoUsuario, #btnCancelarNuevoUsuario, #btnBuscarDocumento, #btnCancelarBusqueda { background:#5a4a9e; color:white; border:none; }
+  #btnEjecutarBusqueda { background:#0c447c; color:white; border:none; }
+  #form-nuevo-usuario, #form-buscar-documento { background:white; border:1px solid #ddd; border-radius:8px; padding:16px; margin-top:8px; }
+  #form-nuevo-usuario label, #form-buscar-documento label { display:block; font-size:13px; color:#555; margin-top:8px; }
+  #form-nuevo-usuario input, #form-buscar-documento input { width:100%; padding:8px; border-radius:6px; border:1px solid #ccc; box-sizing:border-box; }
   #btnEntregada { background:#1a7a3c; color:white; border:none; }
   #btnNoEntregada { background:#a15c00; color:white; border:none; }
   #btnBorrar { background:#791f1f; color:white; border:none; }
@@ -28,7 +29,7 @@
 </head>
 <body>
 
-<h1>Escáner de accesibilidad</h1>
+<h1>Escáner de accesibilidad Páramo</h1>
 <div id="estado">Sin datos del evento cargados.</div>
 
 <!-- PANTALLA 1: cargar los datos del evento (una sola vez, con internet) -->
@@ -38,47 +39,57 @@
   <button id="btnCargar">Cargar datos del evento</button>
 </div>
 
-<!-- PANTALLA 2: escaneo, ya sin necesitar internet -->
+<!-- ACCIONES SIEMPRE DISPONIBLES: no dependen de haber cargado el json -->
+<button id="btnNuevoUsuario">➕ Registrar nuevo usuario (sin QR previo)</button>
+
+<div id="form-nuevo-usuario" style="display:none;">
+  <label>Nombre</label>
+  <input type="text" id="nu-nombre">
+  <label>Tipo de documento</label>
+  <input type="text" id="nu-tipodoc">
+  <label>Número de documento</label>
+  <input type="text" id="nu-numdoc">
+  <label>Color de manilla</label>
+  <input type="text" id="nu-manilla">
+  <label>Especificaciones del equipo</label>
+  <input type="text" id="nu-especificaciones">
+  <button id="btnGuardarNuevoUsuario">Guardar y continuar</button>
+  <button id="btnCancelarNuevoUsuario">Cancelar</button>
+</div>
+
+<button id="btnBuscarDocumento">🔍 Buscar por número de documento</button>
+
+<div id="form-buscar-documento" style="display:none;">
+  <label>Número de documento</label>
+  <input type="text" id="bd-numdoc">
+  <button id="btnEjecutarBusqueda">Buscar</button>
+  <button id="btnCancelarBusqueda">Cancelar</button>
+</div>
+
+<div id="aviso-duplicado"></div>
+
+<div id="resultado">
+  <div class="manilla" id="res-manilla"></div>
+  <p><b>Nombre:</b> <span id="res-nombre"></span></p>
+  <p><b>Tipo de documento:</b> <span id="res-tipodoc"></span></p>
+  <p><b>Número de documento:</b> <span id="res-numdoc"></span></p>
+  <p><b>Especificaciones del equipo:</b> <span id="res-especificaciones"></span></p>
+
+  <button id="btnEntregada">✅ Manilla entregada</button>
+  <button id="btnNoEntregada">❌ No entregada</button>
+</div>
+
+<button id="btnSiguiente" style="display:none;">Escanear siguiente</button>
+
+<!-- PANTALLA 2: escaneo con cámara, esta sí depende de haber cargado el json -->
 <div id="paso-escaneo" style="display:none;">
   <button id="btnIniciarCamara">📷 Iniciar cámara para escanear</button>
   <div id="reader"></div>
+</div>
 
-  <button id="btnNuevoUsuario">➕ Registrar nuevo usuario (sin QR previo)</button>
-
-  <div id="form-nuevo-usuario" style="display:none;">
-    <label>Nombre</label>
-    <input type="text" id="nu-nombre">
-    <label>Tipo de documento</label>
-    <input type="text" id="nu-tipodoc">
-    <label>Número de documento</label>
-    <input type="text" id="nu-numdoc">
-    <label>Color de manilla</label>
-    <input type="text" id="nu-manilla">
-    <label>Especificaciones del equipo</label>
-    <input type="text" id="nu-especificaciones">
-    <button id="btnGuardarNuevoUsuario">Guardar y continuar</button>
-    <button id="btnCancelarNuevoUsuario">Cancelar</button>
-  </div>
-
-  <div id="aviso-duplicado"></div>
-
-  <div id="resultado">
-    <div class="manilla" id="res-manilla"></div>
-    <p><b>Nombre:</b> <span id="res-nombre"></span></p>
-    <p><b>Tipo de documento:</b> <span id="res-tipodoc"></span></p>
-    <p><b>Número de documento:</b> <span id="res-numdoc"></span></p>
-    <p><b>Especificaciones del equipo:</b> <span id="res-especificaciones"></span></p>
-
-    <button id="btnEntregada">✅ Manilla entregada</button>
-    <button id="btnNoEntregada">❌ No entregada</button>
-  </div>
-
-  <button id="btnSiguiente" style="display:none;">Escanear siguiente</button>
-
-  <div id="controles-finales">
-    <button id="btnExportar">Exportar registro de ingresos</button>
-    <button id="btnBorrar">Borrar datos del evento</button>
-  </div>
+<div id="controles-finales">
+  <button id="btnExportar">Exportar registro de ingresos</button>
+  <button id="btnBorrar">Exportar y borrar todo</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -88,6 +99,7 @@
   // Esto envuelto en try/catch para que, si falla (por ejemplo porque
   // sw.js no existe en este lugar específico donde está publicada la
   // página), el resto de la app siga funcionando con total normalidad.
+
   try {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -97,7 +109,7 @@
   }
 
   // ---------- CONFIGURACIÓN ----------
-  const HORAS_EXPIRACION = 48; // borrado automático pasadas 48h de cargar los datos
+  const HORAS_EXPIRACION = 56; // borrado automático pasadas 56h de cargar los datos
   let scanner = null;
   let codigoActual = null; // guarda qué código se acaba de escanear, mientras se decide
 
@@ -207,7 +219,23 @@
       return;
     }
 
-    // Mostramos los datos de la persona en pantalla
+    // Revisamos y mostramos, con la misma lógica que usa la búsqueda por documento
+    procesarPersonaEncontrada(codigo, persona);
+  }
+
+  // ---------- Función compartida: revisa duplicado y muestra a la persona ----------
+  // La usan el escaneo de QR Y la búsqueda por número de documento.
+  function procesarPersonaEncontrada(codigo, persona) {
+    const yaIngreso = buscarIngresoPrevio(codigo);
+    if (yaIngreso) {
+      document.getElementById("aviso-duplicado").style.display = "block";
+      document.getElementById("aviso-duplicado").textContent =
+        `⚠️ Esta persona ya ingresó el ${yaIngreso.hora} (manilla: ${yaIngreso.manilla_entregada ? "sí entregada" : "no entregada"}).`;
+      document.getElementById("resultado").style.display = "none";
+      document.getElementById("btnSiguiente").style.display = "block";
+      return;
+    }
+    document.getElementById("aviso-duplicado").style.display = "none";
     mostrarPersonaParaConfirmar(codigo, persona);
   }
 
@@ -221,6 +249,7 @@
     document.getElementById("res-numdoc").textContent = persona["numero de documento"];
     document.getElementById("res-especificaciones").textContent = persona["especificaciones del equipo"];
     document.getElementById("resultado").style.display = "block";
+  }
 
   // ---------- Registrar un usuario nuevo, sin QR previo ----------
   document.getElementById("btnNuevoUsuario").addEventListener("click", () => {
@@ -288,6 +317,45 @@
     mostrarPersonaParaConfirmar(codigoNuevo, persona);
   });
 
+  // ---------- Buscar por número de documento (respaldo si falla la cámara) ----------
+  document.getElementById("btnBuscarDocumento").addEventListener("click", () => {
+    document.getElementById("form-buscar-documento").style.display = "block";
+  });
+
+  document.getElementById("btnCancelarBusqueda").addEventListener("click", () => {
+    document.getElementById("form-buscar-documento").style.display = "none";
+  });
+
+  document.getElementById("btnEjecutarBusqueda").addEventListener("click", () => {
+    const numdocBuscado = document.getElementById("bd-numdoc").value.trim();
+    if (!numdocBuscado) {
+      alert("Escribe un número de documento para buscar.");
+      return;
+    }
+
+    const datos = JSON.parse(localStorage.getItem("evento_lookup") || "{}");
+
+    let codigoEncontrado = null;
+    let personaEncontrada = null;
+    for (const codigo in datos) {
+      if (String(datos[codigo]["numero de documento"] || "").trim() === numdocBuscado) {
+        codigoEncontrado = codigo;
+        personaEncontrada = datos[codigo];
+        break;
+      }
+    }
+
+    if (!personaEncontrada) {
+      alert("No se encontró ningún registro con ese número de documento.");
+      return;
+    }
+
+    document.getElementById("form-buscar-documento").style.display = "none";
+    document.getElementById("bd-numdoc").value = "";
+
+    procesarPersonaEncontrada(codigoEncontrado, personaEncontrada);
+  });
+
   // ---------- PASO 4: el staff confirma si entregó la manilla o no ----------
   function confirmarIngreso(entregada) {
     const datos = JSON.parse(localStorage.getItem("evento_lookup"));
@@ -323,11 +391,13 @@
   }
 
   // ---------- Exportar el registro de ingresos a un archivo descargable ----------
-  document.getElementById("btnExportar").addEventListener("click", () => {
+  // Convertida en función reutilizable: la usa tanto el botón de exportar
+  // solo, como el botón de "Exportar y borrar" (para nunca borrar sin
+  // haber exportado primero). Devuelve true si sí había algo que exportar.
+  function exportarRegistroDeIngresos() {
     const registro = JSON.parse(localStorage.getItem("ingresos_registrados") || "[]");
     if (registro.length === 0) {
-      alert("Todavía no hay ningún ingreso registrado.");
-      return;
+      return false;
     }
 
     // Armamos un texto tipo CSV: primero los encabezados, luego una línea por registro
@@ -342,12 +412,29 @@
     enlace.href = url;
     enlace.download = "registro_ingresos.csv";
     enlace.click();
+    return true;
+  }
+
+  document.getElementById("btnExportar").addEventListener("click", () => {
+    const seExporto = exportarRegistroDeIngresos();
+    if (!seExporto) {
+      alert("Todavía no hay ningún ingreso registrado.");
+    }
   });
 
   // ---------- Borrar todos los datos guardados en este celular ----------
+  // Ahora SIEMPRE exporta primero (si hay algo que exportar), nunca borra
+  // sin haber descargado antes el registro de ingresos.
   function borrarTodo(pedirConfirmacion = true) {
-    if (pedirConfirmacion && !confirm("¿Borrar todos los datos del evento y el registro de ingresos de este celular?")) {
-      return;
+    if (pedirConfirmacion) {
+      const confirmado = confirm(
+        "Esto va a descargar el registro de ingresos (si hay alguno) y luego " +
+        "borrar TODOS los datos del evento de este celular. ¿Continuar?"
+      );
+      if (!confirmado) {
+        return;
+      }
+      exportarRegistroDeIngresos();
     }
     localStorage.removeItem("evento_lookup");
     localStorage.removeItem("evento_cargado_en");
@@ -366,3 +453,5 @@
 
 </body>
 </html>
+
+//Version 23/09/26 cambios en agregar nuevo usuario
