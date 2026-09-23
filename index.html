@@ -8,7 +8,11 @@
   body { font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background:#f5f5f3; }
   h1 { font-size: 18px; }
   button { padding: 12px 16px; font-size: 14px; border-radius: 8px; border: 1px solid #ccc; margin: 6px 0; width: 100%; cursor: pointer; }
-  #btnCargar, #btnSiguiente, #btnIniciarCamara { background:#0c447c; color:white; border:none; }
+  #btnCargar, #btnSiguiente, #btnIniciarCamara, #btnGuardarNuevoUsuario { background:#0c447c; color:white; border:none; }
+  #btnNuevoUsuario, #btnCancelarNuevoUsuario { background:#5a4a9e; color:white; border:none; }
+  #form-nuevo-usuario { background:white; border:1px solid #ddd; border-radius:8px; padding:16px; margin-top:8px; }
+  #form-nuevo-usuario label { display:block; font-size:13px; color:#555; margin-top:8px; }
+  #form-nuevo-usuario input { width:100%; padding:8px; border-radius:6px; border:1px solid #ccc; box-sizing:border-box; }
   #btnEntregada { background:#1a7a3c; color:white; border:none; }
   #btnNoEntregada { background:#a15c00; color:white; border:none; }
   #btnBorrar { background:#791f1f; color:white; border:none; }
@@ -38,6 +42,23 @@
 <div id="paso-escaneo" style="display:none;">
   <button id="btnIniciarCamara">📷 Iniciar cámara para escanear</button>
   <div id="reader"></div>
+
+  <button id="btnNuevoUsuario">➕ Registrar nuevo usuario (sin QR previo)</button>
+
+  <div id="form-nuevo-usuario" style="display:none;">
+    <label>Nombre</label>
+    <input type="text" id="nu-nombre">
+    <label>Tipo de documento</label>
+    <input type="text" id="nu-tipodoc">
+    <label>Número de documento</label>
+    <input type="text" id="nu-numdoc">
+    <label>Color de manilla</label>
+    <input type="text" id="nu-manilla">
+    <label>Especificaciones del equipo</label>
+    <input type="text" id="nu-especificaciones">
+    <button id="btnGuardarNuevoUsuario">Guardar y continuar</button>
+    <button id="btnCancelarNuevoUsuario">Cancelar</button>
+  </div>
 
   <div id="aviso-duplicado"></div>
 
@@ -187,6 +208,12 @@
     }
 
     // Mostramos los datos de la persona en pantalla
+    mostrarPersonaParaConfirmar(codigo, persona);
+  }
+
+  // ---------- Función compartida: muestra los datos y los botones de confirmar ----------
+  // La usan tanto el escaneo de QR como el registro manual de usuario nuevo.
+  function mostrarPersonaParaConfirmar(codigo, persona) {
     codigoActual = codigo;
     document.getElementById("res-manilla").textContent = "Manilla: " + persona["Color de manilla"];
     document.getElementById("res-nombre").textContent = persona["Nombre"];
@@ -194,7 +221,72 @@
     document.getElementById("res-numdoc").textContent = persona["numero de documento"];
     document.getElementById("res-especificaciones").textContent = persona["especificaciones del equipo"];
     document.getElementById("resultado").style.display = "block";
-  }
+
+  // ---------- Registrar un usuario nuevo, sin QR previo ----------
+  document.getElementById("btnNuevoUsuario").addEventListener("click", () => {
+    document.getElementById("form-nuevo-usuario").style.display = "block";
+  });
+
+  document.getElementById("btnCancelarNuevoUsuario").addEventListener("click", () => {
+    document.getElementById("form-nuevo-usuario").style.display = "none";
+  });
+
+  document.getElementById("btnGuardarNuevoUsuario").addEventListener("click", () => {
+    const nombre = document.getElementById("nu-nombre").value.trim();
+    const tipodoc = document.getElementById("nu-tipodoc").value.trim();
+    const numdoc = document.getElementById("nu-numdoc").value.trim();
+    const manilla = document.getElementById("nu-manilla").value.trim();
+    const especificaciones = document.getElementById("nu-especificaciones").value.trim();
+
+    if (!nombre || !numdoc) {
+      alert("Nombre y número de documento son obligatorios.");
+      return;
+    }
+
+    const datos = JSON.parse(localStorage.getItem("evento_lookup") || "{}");
+
+    // Revisar si ya existe alguien con el mismo nombre y documento, para
+    // no crear un duplicado sin querer
+    const claveNueva = nombre.toLowerCase() + "||" + numdoc;
+    const yaExiste = Object.keys(datos).some((codigoExistente) => {
+      const p = datos[codigoExistente];
+      const claveExistente = String(p["Nombre"] || "").toLowerCase().trim() + "||" + String(p["numero de documento"] || "").trim();
+      return claveExistente === claveNueva;
+    });
+
+    if (yaExiste) {
+      alert("Ya existe un registro con ese nombre y documento. Usa la cámara para escanear su QR en vez de crear uno nuevo.");
+      return;
+    }
+
+    // Generamos un código único local, distinto a los que vienen del correo
+    const codigoNuevo = "MANUAL-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+
+    const persona = {
+      "Nombre": nombre,
+      "tipo de documento": tipodoc,
+      "numero de documento": numdoc,
+      "Color de manilla": manilla,
+      "especificaciones del equipo": especificaciones
+    };
+
+    // Lo agregamos a los mismos datos del evento guardados en el celular,
+    // para que quede disponible igual que cualquier persona pre-registrada
+    datos[codigoNuevo] = persona;
+    localStorage.setItem("evento_lookup", JSON.stringify(datos));
+
+    // Limpiamos el formulario y lo ocultamos
+    document.getElementById("form-nuevo-usuario").style.display = "none";
+    document.getElementById("nu-nombre").value = "";
+    document.getElementById("nu-tipodoc").value = "";
+    document.getElementById("nu-numdoc").value = "";
+    document.getElementById("nu-manilla").value = "";
+    document.getElementById("nu-especificaciones").value = "";
+
+    // Lo mostramos igual que si hubiera sido escaneado, con los botones
+    // de confirmar si se entrega la manilla o no
+    mostrarPersonaParaConfirmar(codigoNuevo, persona);
+  });
 
   // ---------- PASO 4: el staff confirma si entregó la manilla o no ----------
   function confirmarIngreso(entregada) {
